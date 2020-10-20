@@ -6,7 +6,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import personal.leo.cks.server.config.props.CksProps;
-import personal.leo.cks.server.constants.PropKey;
 
 import javax.annotation.PostConstruct;
 
@@ -31,7 +30,7 @@ public class MasterHealthChecker {
     }
 
 
-    @Scheduled(fixedDelayString = "${" + PropKey.HEALTH_THRESHOLD_IN_SEC + "}")
+    @Scheduled(fixedDelayString = "${canal-kudu-syncer.healthCheck.periodInSec}")
     public void tryToBeMaster() {
         try {
             doTryToBeMaster();
@@ -41,7 +40,7 @@ public class MasterHealthChecker {
     }
 
     private void doTryToBeMaster() {
-        final int healthThresholdInSec = cksProps.calcHealthThresholdInSec();
+//        final int healthThresholdInSec = cksProps.calcHealthThresholdInSec();
 //        final MasterPO inactivedMaster = masterMapper.selectInactived(healthThresholdInSec);
 //        if (inactivedMaster != null) {
 //            final String ip = IpUtils.getIp();

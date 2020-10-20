@@ -6,7 +6,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import personal.leo.cks.server.config.props.CksProps;
-import personal.leo.cks.server.constants.PropKey;
 import personal.leo.cks.server.util.IpUtils;
 import personal.leo.cks.server.util.StateHolder;
 
@@ -27,9 +26,11 @@ public class HealthReporter {
 
     final AtomicInteger reportHealthFailedCounter = new AtomicInteger(0);
 
-    @Scheduled(fixedDelayString = "${" + PropKey.HEALTH_THRESHOLD_IN_SEC + "}")
+    //TODO 这个时间从cksProps里取
+    @Scheduled(fixedDelayString = "${canal-kudu-syncer.healthCheck.periodInMills}")
     public void reportHealth() {
         try {
+            System.out.println("1");
             doReportHealth();
         } catch (Exception e) {
             log.error("tryToBeMaster error", e);
