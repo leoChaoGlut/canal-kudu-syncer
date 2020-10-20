@@ -1,0 +1,14 @@
+server:
+  port: 10011
+
+canal-kudu-syncer:
+  zk:
+    servers: test01:2181
+  healthCheckPeriodInSec: 1
+  healthCheckToleranceTimes: 15
+  ntp:
+    enabled: true
+    server: ntp.aliyun.com
+  canal:
+    zkServers: test01:2181
+    destination: i2
