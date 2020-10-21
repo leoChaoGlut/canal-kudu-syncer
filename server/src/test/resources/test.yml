@@ -1,0 +1,6 @@
+cks:
+  master: s1
+  available:
+    - s1
+    - s2
+    - s3

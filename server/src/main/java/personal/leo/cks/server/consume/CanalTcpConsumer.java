@@ -1,19 +1,21 @@
 package personal.leo.cks.server.consume;
 
 import lombok.extern.slf4j.Slf4j;
-import personal.leo.cks.server.util.StateHolder;
+import org.springframework.beans.factory.annotation.Autowired;
+import personal.leo.cks.server.zk.ZkService;
 
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class CanalTcpConsumer {
 
-    boolean running;
+    @Autowired
+    ZkService zkService;
 
     public void consumer() {
-        while (running) {
-            if (StateHolder.isActive()) {
-//TODO consume
+        while (true) {
+            if (zkService.isMaster()) {
+//                TODO
             } else {
                 try {
                     TimeUnit.SECONDS.sleep(1L);
