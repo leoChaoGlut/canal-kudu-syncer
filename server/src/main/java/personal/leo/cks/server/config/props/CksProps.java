@@ -11,6 +11,7 @@ public class CksProps {
      */
     private Zk zk;
     private Canal canal;
+    private Kudu kudu;
 
     @Getter
     @Setter
@@ -32,5 +33,17 @@ public class CksProps {
         private String destination;
         private String username;
         private String password;
+        private int batchSize = 1000;
+        private long fetchTimeOutInMills = 500L;
+        private int maxRetryTimes = 0;
+    }
+
+    @Getter
+    @Setter
+    public static class Kudu {
+        /**
+         * split by ,
+         */
+        private String masterAddresses;
     }
 }

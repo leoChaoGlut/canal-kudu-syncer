@@ -36,7 +36,7 @@ public class ZkService {
     boolean isMaster = false;
 
     @PostConstruct
-    public void postConstruct() throws Exception {
+    private void postConstruct() throws Exception {
         thisServer = InetAddress.getLocalHost().getHostAddress() + ":" + port;
         thisServerZkPath = availablePath + "/" + thisServer;
 
