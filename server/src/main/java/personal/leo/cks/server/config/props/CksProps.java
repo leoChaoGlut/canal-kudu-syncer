@@ -20,7 +20,6 @@ public class CksProps {
          * split by ,
          */
         private String servers;
-        private int timeoutInMills = 3000;
     }
 
     @Getter
@@ -34,8 +33,7 @@ public class CksProps {
         private String username;
         private String password;
         private int batchSize = 1000;
-        private long fetchTimeOutInMills = 500L;
-        private int maxRetryTimes = 0;
+        private long fetchTimeOutMs = 500L;
     }
 
     @Getter

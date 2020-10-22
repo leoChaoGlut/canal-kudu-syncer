@@ -45,51 +45,45 @@ public class CanalToKuduSyncer {
 
     /**
      * TODO 失败告警邮件
+     * TODO client HA 有1.5min的延迟
      */
-    public void consume() {
+    private void consume() {
         while (true) {
-            if (zkService.isMaster()) {
-                doConsume();
-            } else {
-                try {
-                    TimeUnit.SECONDS.sleep(1L);
-                } catch (InterruptedException e) {
-                    log.error("sleep error", e);
-                }
-            }
+            doConsume();
+            sleepSec(1);
         }
     }
+
 
     private void doConsume() {
         try {
             canalConnector.connect();
             canalConnector.subscribe();
 
-            int maxRetryTimes = cksProps.getCanal().getMaxRetryTimes() >= 0 ? cksProps.getCanal().getMaxRetryTimes() : Integer.MAX_VALUE;
+            while (true) {
+                final boolean isStandByClient = !canalConnector.checkValid();
+                if (isStandByClient) {
+                    sleepSec(1);
+                    continue;
+                }
 
-            while (zkService.isMaster()) {
-                for (int retryTimes = 0; retryTimes <= maxRetryTimes; retryTimes++) {
-                    Long batchId = null;
-                    boolean ackSuccess = false;
+                Long batchId = null;
 
-                    try {
-                        final Message message = canalConnector.getWithoutAck(cksProps.getCanal().getBatchSize(), cksProps.getCanal().getFetchTimeOutInMills(), TimeUnit.MILLISECONDS);
-                        batchId = message.getId();
-                        if (batchId != -1 && CollectionUtils.isNotEmpty(message.getEntries())) {
-                            syncToKudu(message);
-                        }
+                try {
+                    final Message message = canalConnector.getWithoutAck(cksProps.getCanal().getBatchSize(), cksProps.getCanal().getFetchTimeOutMs(), TimeUnit.MILLISECONDS);
+                    batchId = message.getId();
+                    if (batchId == -1 || CollectionUtils.isEmpty(message.getEntries())) {
                         canalConnector.ack(batchId);
-                        ackSuccess = true;
-                    } catch (Exception e) {
-                        if (batchId != null) {
-                            canalConnector.rollback(batchId);
-                        }
-                        log.error("doConsume retry error", e);
+                        sleepSec(1);
+                    } else {
+                        syncToKudu(message);
+                        canalConnector.ack(batchId);
                     }
-
-                    if (ackSuccess) {
-                        break;
+                } catch (Exception e) {
+                    if (batchId != null) {
+                        canalConnector.rollback(batchId);
                     }
+                    log.error("doConsume retry error", e);
                 }
             }
         } catch (Exception e) {
@@ -98,7 +92,6 @@ public class CanalToKuduSyncer {
             canalConnector.unsubscribe();
             canalConnector.disconnect();
         }
-
     }
 
     /**
@@ -226,4 +219,11 @@ public class CanalToKuduSyncer {
         return entry.getHeader().getSchemaName() + "." + entry.getHeader().getTableName();
     }
 
+    private void sleepSec(long sec) {
+        try {
+            TimeUnit.SECONDS.sleep(sec);
+        } catch (InterruptedException e) {
+            log.error("sleep error", e);
+        }
+    }
 }
