@@ -1,7 +1,6 @@
 package personal.leo.cks.server;
 
 import org.junit.Test;
-import personal.leo.cks.server.exception.FatalException;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -52,9 +51,6 @@ public class CommonTest {
 
     @Test
     public void test3() throws ExecutionException, InterruptedException {
-        final FatalException e = new FatalException();
-        System.out.println(e.getClass().getSimpleName().equals(FatalException.class.getSimpleName()));
-        System.out.println(e instanceof RuntimeException);
     }
 
     public static class TT {

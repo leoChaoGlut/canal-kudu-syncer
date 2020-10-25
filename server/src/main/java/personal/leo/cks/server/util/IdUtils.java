@@ -18,6 +18,10 @@ public class IdUtils {
         return entry.getHeader().getSchemaName() + DOT + entry.getHeader().getTableName();
     }
 
+    public static String buildSrcTableId(String schemaName, String tableName) {
+        return schemaName + DOT + tableName;
+    }
+
     public static String buildKuduColumnId(String kuduTableName, String kuduColumnName) {
         return kuduTableName + DOT + kuduColumnName;
     }

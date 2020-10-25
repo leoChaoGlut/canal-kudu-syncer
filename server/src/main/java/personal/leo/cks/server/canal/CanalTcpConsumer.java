@@ -52,7 +52,9 @@ public class CanalTcpConsumer {
         }
     }
 
-
+    /**
+     * TODO bootstrap完成后,动态subscribe
+     */
     private void doConsume() {
         try {
             canalConnector.connect();

@@ -8,3 +8,11 @@ canal-kudu-syncer:
     destination: i2
   kudu:
     masterAddresses: test02
+
+
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/test?serverTimezone=Asia/Shanghai
+    username: root
+    password: 1111
+    driver-class-name: com.mysql.cj.jdbc.Driver

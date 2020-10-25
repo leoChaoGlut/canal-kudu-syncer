@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.stereotype.Component;
 import personal.leo.cks.server.exception.FatalException;
+import personal.leo.cks.server.service.CksService;
 import personal.leo.cks.server.util.IdUtils;
 
 import javax.annotation.PostConstruct;
@@ -21,7 +22,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -33,9 +33,7 @@ public class KuduSyncer {
     @Autowired
     private KuduClient kuduClient;
     @Autowired
-    private Map<String, String> srcTableIdMapKuduTableName;
-    @Autowired
-    private Map<String, Type> kuduColumnIdMapKuduColumnType;
+    private CksService cksService;
 
     private KuduSession session;
 
@@ -75,7 +73,7 @@ public class KuduSyncer {
 
     public synchronized void doOperation(CanalEntry.Entry entry, CanalEntry.RowChange rowChange, OperationType operationType) throws KuduException, ParseException {
         final String srcTableId = IdUtils.buildSrcTableId(entry);
-        final String kuduTableName = srcTableIdMapKuduTableName.get(srcTableId);
+        final String kuduTableName = cksService.getKuduTableName(srcTableId);
         if (kuduTableName == null) {
             //TODO 跳过?
         } else {
@@ -130,7 +128,7 @@ public class KuduSyncer {
                 final String kuduColumnName = srcColumn.getName();
                 final String kuduColumnId = IdUtils.buildKuduColumnId(kuduTableName, kuduColumnName);
                 final String srcColumnValue = srcColumn.getValue();
-                final Type kuduColumnType = kuduColumnIdMapKuduColumnType.get(kuduColumnId);
+                final Type kuduColumnType = cksService.getKuduColumnType(kuduColumnId);
                 if (kuduColumnType == null) {
                     //TODO 这种情况先忽略?
                 } else {
