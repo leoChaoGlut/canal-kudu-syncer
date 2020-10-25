@@ -39,6 +39,7 @@ public class CanalTcpConsumer {
     /**
      * TODO 失败告警邮件
      * TODO client HA 有1.5min的延迟
+     * TODO no alive canal server for i2
      */
     private void consume() {
         while (true) {

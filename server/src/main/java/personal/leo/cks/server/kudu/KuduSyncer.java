@@ -61,7 +61,9 @@ public class KuduSyncer {
         session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
         session.setMutationBufferSpace(maxBatchSize);
 
-        new ThreadPoolTaskScheduler().scheduleAtFixedRate(() -> {
+        final ThreadPoolTaskScheduler taskScheduler = new ThreadPoolTaskScheduler();
+        taskScheduler.initialize();
+        taskScheduler.scheduleAtFixedRate(() -> {
             try {
                 sync();
             } catch (Exception e) {
