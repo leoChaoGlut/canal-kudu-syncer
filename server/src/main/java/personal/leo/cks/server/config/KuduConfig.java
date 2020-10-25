@@ -11,6 +11,7 @@ import org.apache.kudu.client.KuduTable;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import personal.leo.cks.server.config.props.CksProps;
+import personal.leo.cks.server.util.IdUtils;
 
 import java.util.Map;
 
@@ -34,32 +35,25 @@ public class KuduConfig {
      * @throws KuduException
      */
     @Bean
-    public Map<String, Type> columnNameMapType(KuduClient kuduClient) throws KuduException {
+    public Map<String, Type> kuduColumnIdMapKuduColumnType(KuduClient kuduClient) throws KuduException {
         final StopWatch watch = StopWatch.createStarted();
-        final Map<String, Type> columnNameMapType = new HashedMap<>();
+        final Map<String, Type> kuduColumnIdMapKuduColumnType = new HashedMap<>();
         for (String tableName : kuduClient.getTablesList().getTablesList()) {
             final KuduTable table = kuduClient.openTable(tableName);
             for (ColumnSchema column : table.getSchema().getColumns()) {
-                columnNameMapType.put(column.getName(), column.getType());
+                final String kuduColumnId = IdUtils.buildKuduColumnId(table, column);
+                kuduColumnIdMapKuduColumnType.put(kuduColumnId, column.getType());
             }
         }
         watch.stop();
-        log.info("columnNameMapType spend: " + watch);
-        return columnNameMapType;
+        log.info("kuduColumnIdMapType spend: " + watch);
+        return kuduColumnIdMapKuduColumnType;
     }
 
     @Bean
-    public Map<String, Type> srcTableIdMap(KuduClient kuduClient) throws KuduException {
+    public Map<String, String> srcTableIdMapKuduTableName() {
         final StopWatch watch = StopWatch.createStarted();
-        final Map<String, Type> columnNameMapType = new HashedMap<>();
-        for (String tableName : kuduClient.getTablesList().getTablesList()) {
-            final KuduTable table = kuduClient.openTable(tableName);
-            for (ColumnSchema column : table.getSchema().getColumns()) {
-                columnNameMapType.put(column.getName(), column.getType());
-            }
-        }
-        watch.stop();
-        log.info("columnNameMapType spend: " + watch);
-        return columnNameMapType;
+//       TODO 如何构造?如何获取?
+        return null;
     }
 }
