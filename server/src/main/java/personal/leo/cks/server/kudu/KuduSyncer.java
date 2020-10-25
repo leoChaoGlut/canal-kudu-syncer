@@ -9,6 +9,7 @@ import org.apache.kudu.client.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.stereotype.Component;
+import personal.leo.cks.server.exception.FatalException;
 import personal.leo.cks.server.util.IdUtils;
 
 import javax.annotation.PostConstruct;
@@ -101,7 +102,7 @@ public class KuduSyncer {
                 operation = kuduTable.newDelete();
                 break;
             default:
-                throw new RuntimeException("not supported:" + operationType);
+                throw new FatalException("not supported:" + operationType);
         }
 
         fillOperation(rowChange, kuduTableName, operationType, operation);
@@ -122,7 +123,7 @@ public class KuduSyncer {
                     srcColumns = rowData.getBeforeColumnsList();
                     break;
                 default:
-                    throw new RuntimeException("not supported:" + operationType);
+                    throw new FatalException("not supported:" + operationType);
             }
 
             for (CanalEntry.Column srcColumn : srcColumns) {

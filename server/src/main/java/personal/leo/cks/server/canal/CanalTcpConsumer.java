@@ -9,6 +9,7 @@ import org.apache.kudu.client.KuduException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import personal.leo.cks.server.config.props.CksProps;
+import personal.leo.cks.server.exception.FatalException;
 import personal.leo.cks.server.kudu.KuduSyncer;
 import personal.leo.cks.server.kudu.OperationType;
 
@@ -41,7 +42,12 @@ public class CanalTcpConsumer {
      */
     private void consume() {
         while (true) {
-            doConsume();
+            try {
+                doConsume();
+            } catch (Exception e) {
+                log.error("doConsumer error", e);
+                FatalException.throwIfFatal(e);
+            }
             sleepSec(1);
         }
     }
@@ -75,11 +81,10 @@ public class CanalTcpConsumer {
                     if (batchId != null) {
                         canalConnector.rollback(batchId);
                     }
-                    log.error("doConsume retry error", e);
+                    log.error("doConsume loop error", e);
+                    FatalException.throwIfFatal(e);
                 }
             }
-        } catch (Exception e) {
-            log.error("doConsume error", e);
         } finally {
             canalConnector.unsubscribe();
             canalConnector.disconnect();
