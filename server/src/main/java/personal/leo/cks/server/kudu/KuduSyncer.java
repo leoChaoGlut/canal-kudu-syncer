@@ -32,7 +32,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 /**
- * TODO 目前是单线程的,后续考虑多线程
+ * TODO 目前是单线程的,对接一个MQ一个Topic后,考虑多线程
  */
 @Slf4j
 @Component
@@ -299,7 +299,6 @@ public class KuduSyncer {
         if (resps.size() > 0) {
             OperationResponse resp = resps.get(0);
             if (resp.hasRowError()) {
-                //TODO 应该丢出怎样的异常?fatal?
                 throw new RuntimeException("sync to kudu error:" + resp.getRowError());
             }
         }

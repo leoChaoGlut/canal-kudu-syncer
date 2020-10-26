@@ -24,13 +24,7 @@ import java.util.Set;
 
 import static personal.leo.cks.server.pojo.TableMappingInfo.COMMA;
 
-/**
- * TODO 需要支持reload
- * TODO 定时更新
- *
- * @return
- * @throws KuduException
- */
+
 @Slf4j
 @Service
 public class CksService {

@@ -52,7 +52,7 @@ public class CksProps {
         private int maxBatchSize = 10000;
         private int syncPeriodMs = 500;
         /**
-         * TODO 如果kudu库中没有该条数据,会导致插入有误,因为会比较源库中的before和after,只会找到变更的值
+         * TODO 如果kudu库中没有该条数据,会导致插入数据遗漏,因为会比较源库中的before和after,只会找到变更的值
          */
         private boolean onlySyncValueChangedColumns = false;
     }
