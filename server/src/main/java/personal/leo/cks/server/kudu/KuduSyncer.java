@@ -15,6 +15,7 @@ import org.apache.kudu.client.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.stereotype.Component;
+import personal.leo.cks.server.config.props.CksProps;
 import personal.leo.cks.server.exception.FatalException;
 import personal.leo.cks.server.service.CksService;
 import personal.leo.cks.server.util.IdUtils;
@@ -36,22 +37,13 @@ import java.util.stream.Collectors;
 @Slf4j
 @Component
 public class KuduSyncer {
-    @Autowired
-    private KuduClient kuduClient;
-    @Autowired
-    private CksService cksService;
+    private final KuduClient kuduClient;
+    private final CksService cksService;
 
+    private CksProps.Kudu kuduProps;
     private KuduSession session;
 
-    /**
-     * 不可大于 org.apache.kudu.client.AsyncKuduSession#mutationBufferMaxOps,否则kuduclient会报错
-     *
-     * @see AsyncKuduSession#apply(org.apache.kudu.client.Operation)
-     * @see org.apache.kudu.client.AsyncKuduSession#mutationBufferMaxOps
-     */
-    private final int maxBatchSize = 10000;
-    private final int syncDurationMs = 10000;
-    private final List<Operation> operations = new ArrayList<>(maxBatchSize);
+    private final List<Operation> operations;
     private final Set<Long> batchIds = new HashSet<>();
     private final ConcurrentHashMap<String, KuduTable> kuduTableNameMapKuduTable = new ConcurrentHashMap<>();
     private final String[] datePatterns = {
@@ -63,12 +55,22 @@ public class KuduSyncer {
 
     private AtomicReference<SyncError> syncError = new AtomicReference<>();
 
+    @Autowired
+    public KuduSyncer(KuduClient kuduClient, CksService cksService, CksProps cksProps) {
+        this.kuduClient = kuduClient;
+        this.cksService = cksService;
+
+        this.kuduProps = cksProps.getKudu();
+        this.operations = new ArrayList<>(kuduProps.getMaxBatchSize());
+    }
+
+
     @PostConstruct
     private void postConstruct() {
         session = kuduClient.newSession();
 
         session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
-        session.setMutationBufferSpace(maxBatchSize);
+        session.setMutationBufferSpace(kuduProps.getMaxBatchSize());
 
         final ThreadPoolTaskScheduler taskScheduler = new ThreadPoolTaskScheduler();
         taskScheduler.initialize();
@@ -79,7 +81,7 @@ public class KuduSyncer {
                 log.error("schedule kudu syncer error", e);
                 syncError.set(new SyncError(batchIds, e));
             }
-        }, Duration.ofMillis(syncDurationMs));
+        }, Duration.ofMillis(kuduProps.getSyncPeriodMs()));
     }
 
 
@@ -96,7 +98,7 @@ public class KuduSyncer {
             batchIds.add(batchId);
 
             //大于等于maxBatchSize的话,kudu apply的时候会报错
-            if (operations.size() == maxBatchSize - 1) {
+            if (operations.size() == kuduProps.getMaxBatchSize() - 1) {
                 sync();
             }
         }
@@ -129,18 +131,17 @@ public class KuduSyncer {
         final PartialRow row = operation.getRow();
         for (CanalEntry.RowData rowData : rowChange.getRowDatasList()) {
             final List<CanalEntry.Column> srcModifiedColumns;
-//            TODO 找到变更的列
-            final List<CanalEntry.Column> beforeColumnsList = rowData.getBeforeColumnsList();
-            final List<CanalEntry.Column> afterColumnsList = rowData.getAfterColumnsList();
+            final List<CanalEntry.Column> beforeColumns = rowData.getBeforeColumnsList();
+            final List<CanalEntry.Column> afterColumns = rowData.getAfterColumnsList();
             switch (operationType) {
                 case INSERT:
-                    srcModifiedColumns = afterColumnsList;
+                    srcModifiedColumns = afterColumns;
                     break;
                 case UPDATE:
-                    srcModifiedColumns = findValueChangedColumns(beforeColumnsList, afterColumnsList, kuduTableName);
+                    srcModifiedColumns = findValueChangedColumns(beforeColumns, afterColumns, kuduTableName);
                     break;
                 case DELETE:
-                    srcModifiedColumns = beforeColumnsList;
+                    srcModifiedColumns = beforeColumns;
                     break;
                 default:
                     throw new FatalException("not supported:" + operationType);
@@ -163,13 +164,13 @@ public class KuduSyncer {
     /**
      * TODO 如果kudu库中没有该条数据,会导致插入有误,因为会比较源库中的before和after,只会找到变更的值
      *
-     * @param beforeColumnsList
-     * @param afterColumnsList
+     * @param beforeColumns
+     * @param afterColumns
      * @param kuduTableName
      * @return
      */
-    private List<CanalEntry.Column> findValueChangedColumns(List<CanalEntry.Column> beforeColumnsList, List<CanalEntry.Column> afterColumnsList, String kuduTableName) {
-        return afterColumnsList.stream()
+    private List<CanalEntry.Column> findValueChangedColumns(List<CanalEntry.Column> beforeColumns, List<CanalEntry.Column> afterColumns, String kuduTableName) {
+        return afterColumns.stream()
                 .map(afterColumn -> {
                     final String kuduColumnId = IdUtils.buildKuduColumnId(kuduTableName, afterColumn.getName());
                     final ColumnSchema kuduColumn = cksService.getKuduColumn(kuduColumnId);
@@ -186,7 +187,7 @@ public class KuduSyncer {
                         }
                     }
 
-                    final CanalEntry.Column beforeColumn = findColumn(beforeColumnsList, afterColumn);
+                    final CanalEntry.Column beforeColumn = findColumn(beforeColumns, afterColumn);
                     if (beforeColumn == null) {
                         return afterColumn;
                     } else {

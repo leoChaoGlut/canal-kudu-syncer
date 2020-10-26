@@ -52,7 +52,7 @@ public class CanalTcpConsumer {
                 log.error("doConsumer error", e);
                 FatalException.throwIfFatal(e);
             }
-            sleepSec(1);
+            sleepMs(1000);
         }
     }
 
@@ -68,36 +68,22 @@ public class CanalTcpConsumer {
 
             while (true) {
                 final StopWatch watch = StopWatch.createStarted();
-                final boolean isStandByClient = !canalConnector.checkValid();
-                watch.stop();
-                log.info("checkValid spend: " + watch);
-                if (isStandByClient) {
-                    sleepSec(3);
-                    continue;
-                }
 
                 long batchId = INVALID_BATCH_ID;
                 KuduSyncer.SyncError syncError = null;
 
                 try {
-                    watch.reset();
-                    watch.start();
                     syncError = kuduSyncer.getSyncError();
-                    watch.stop();
                     log.info("getSyncError spend: " + watch);
                     if (syncError != null) {
                         throw syncError.getException();
                     }
-                    watch.reset();
-                    watch.start();
                     final Message message = canalConnector.getWithoutAck(cksProps.getCanal().getBatchSize(), cksProps.getCanal().getFetchTimeOutMs(), TimeUnit.MILLISECONDS);
-                    watch.stop();
-                    log.info("getWithoutAck spend: " + watch);
                     batchId = message.getId();
                     if (batchId == INVALID_BATCH_ID || CollectionUtils.isEmpty(message.getEntries())) {
                         canalConnector.ack(batchId);
                         log.info("no msg:" + batchId);
-                        sleepSec(1);
+                        sleepMs(500);
                     } else {
                         watch.reset();
                         watch.start();
@@ -114,7 +100,7 @@ public class CanalTcpConsumer {
                     if (syncError != null) {
                         syncError.getBatchIds().forEach(bId -> canalConnector.rollback(bId));
                     }
-                    sleepSec(1);
+                    sleepMs(500);
                     FatalException.throwIfFatal(e);
                 }
             }
@@ -170,9 +156,9 @@ public class CanalTcpConsumer {
     }
 
 
-    private void sleepSec(long sec) {
+    private void sleepMs(long ms) {
         try {
-            TimeUnit.SECONDS.sleep(sec);
+            TimeUnit.MILLISECONDS.sleep(ms);
         } catch (InterruptedException e) {
             log.error("sleep error", e);
         }

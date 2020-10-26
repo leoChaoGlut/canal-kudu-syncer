@@ -43,5 +43,13 @@ public class CksProps {
          * split by ,
          */
         private String masterAddresses;
+        /**
+         * 不可大于 org.apache.kudu.client.AsyncKuduSession#mutationBufferMaxOps,否则kuduclient会报错
+         *
+         * @see AsyncKuduSession#apply(org.apache.kudu.client.Operation)
+         * @see org.apache.kudu.client.AsyncKuduSession#mutationBufferMaxOps
+         */
+        private int maxBatchSize = 10000;
+        private int syncPeriodMs = 500;
     }
 }
