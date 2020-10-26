@@ -5,7 +5,6 @@ import com.alibaba.otter.canal.protocol.CanalEntry;
 import com.alibaba.otter.canal.protocol.Message;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
-import org.apache.curator.framework.CuratorFramework;
 import org.apache.kudu.client.KuduException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -17,6 +16,7 @@ import personal.leo.cks.server.service.CuratorService;
 
 import javax.annotation.PostConstruct;
 import java.text.ParseException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import static com.alibaba.otter.canal.protocol.CanalEntry.EntryType.TRANSACTIONBEGIN;
@@ -35,13 +35,18 @@ public class CanalTcpConsumer {
     @Autowired
     KuduSyncer kuduSyncer;
     @Autowired
-    CuratorFramework curator;
-    @Autowired
     CuratorService curatorService;
 
     @PostConstruct
-    private void postConstruct() throws Exception {
-        consume();
+    private void postConstruct() {
+        CompletableFuture.runAsync(() -> {
+            try {
+                consume();
+            } catch (Exception e) {
+                log.error("error occured, quit program", e);
+                System.exit(-1);
+            }
+        });
     }
 
     /**

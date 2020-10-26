@@ -3,7 +3,6 @@ package personal.leo.cks.server.service;
 import com.alibaba.otter.canal.client.CanalConnector;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.map.HashedMap;
-import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.time.StopWatch;
 import org.apache.kudu.ColumnSchema;
@@ -14,14 +13,16 @@ import org.apache.kudu.client.KuduTable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import personal.leo.cks.server.constants.ZkPath;
+import personal.leo.cks.server.pojo.TableMappingInfo;
 import personal.leo.cks.server.util.IdUtils;
 
 import javax.annotation.PostConstruct;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Map;
-import java.util.Objects;
+import java.util.Set;
+
+import static personal.leo.cks.server.pojo.TableMappingInfo.COMMA;
 
 /**
  * TODO 需要支持reload
@@ -43,7 +44,6 @@ public class CksService {
 
     private Map<String, ColumnSchema> kuduColumnIdMapKuduColumn = Collections.synchronizedMap(new HashedMap<>());
     private Map<String, String> srcTableIdMapKuduTableName = Collections.synchronizedMap(new HashedMap<>());
-
 
     @PostConstruct
     private void postConstruct() throws Exception {
@@ -88,41 +88,28 @@ public class CksService {
     }
 
 
-    private void reloadSrcTableIdMapKuduTableName(byte[] bytes) throws Exception {
+    private void reloadSrcTableIdMapKuduTableName(byte[] bytes) {
         final StopWatch watch = StopWatch.createStarted();
         srcTableIdMapKuduTableName.clear();
 
+        if (bytes == null) {
+            return;
+        }
+
         final String csv = new String(bytes, StandardCharsets.UTF_8);
 
-        if (StringUtils.isBlank(csv)) {
-            return;
-        }
+        final Set<TableMappingInfo> tableMappingInfos = TableMappingInfo.parse(csv);
 
-        final String[] rows = StringUtils.splitByWholeSeparator(csv, "\n");
-        if (ArrayUtils.isEmpty(rows)) {
-            return;
-        }
-
-        final String subscribeFilter = Arrays.stream(rows)
-                .map(row -> {
-                    final String[] columns = StringUtils.splitByWholeSeparator(row, ",");
-                    if (ArrayUtils.isEmpty(columns) || columns.length != 3) {
-                        return null;
-                    }
-                    return columns;
-                })
-                .filter(Objects::nonNull)
-                .map(columns -> {
-                    final String srcSchemaName = columns[0];
-                    final String srcTableName = columns[1];
-                    final String kuduTableName = columns[2];
-                    final String srcTableId = IdUtils.buildSrcTableId(srcSchemaName, srcTableName);
-                    srcTableIdMapKuduTableName.put(srcTableId, kuduTableName);
+        final String subscribeFilter = tableMappingInfos.stream()
+                .map(tableMappingInfo -> {
+                    final String srcTableId = tableMappingInfo.fetchSrcTableId();
+                    srcTableIdMapKuduTableName.put(srcTableId, tableMappingInfo.getKuduTableName());
                     return srcTableId;
                 })
-                .reduce((srcTableId1, srcTableId2) -> srcTableId1 + "," + srcTableId2)
+                .reduce((srcTableId1, srcTableId2) -> srcTableId1 + COMMA + srcTableId2)
                 .orElse(null);
 
+        //TODO 多实例的时候,需要测试这里是否会阻塞
         if (StringUtils.isNotBlank(subscribeFilter)) {
             log.info("subscribe filter changed: " + subscribeFilter);
             if (canalConnector.checkValid()) {
