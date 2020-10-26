@@ -5,6 +5,7 @@ import com.alibaba.otter.canal.protocol.CanalEntry;
 import com.alibaba.otter.canal.protocol.Message;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.time.StopWatch;
 import org.apache.kudu.client.KuduException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -23,6 +24,8 @@ import static com.alibaba.otter.canal.protocol.CanalEntry.EntryType.TRANSACTIONE
 @Slf4j
 @Component
 public class CanalTcpConsumer {
+
+    private static final long INVALID_BATCH_ID = -1;
 
     @Autowired
     CanalConnector canalConnector;
@@ -59,32 +62,59 @@ public class CanalTcpConsumer {
     private void doConsume() {
         try {
             canalConnector.connect();
+            log.info("after connect");
             canalConnector.subscribe();
+            log.info("after subscribe");
 
             while (true) {
+                final StopWatch watch = StopWatch.createStarted();
                 final boolean isStandByClient = !canalConnector.checkValid();
+                watch.stop();
+                log.info("checkValid spend: " + watch);
                 if (isStandByClient) {
                     sleepSec(3);
                     continue;
                 }
 
-                Long batchId = null;
+                long batchId = INVALID_BATCH_ID;
+                KuduSyncer.SyncError syncError = null;
 
                 try {
+                    watch.reset();
+                    watch.start();
+                    syncError = kuduSyncer.getSyncError();
+                    watch.stop();
+                    log.info("getSyncError spend: " + watch);
+                    if (syncError != null) {
+                        throw syncError.getException();
+                    }
+                    watch.reset();
+                    watch.start();
                     final Message message = canalConnector.getWithoutAck(cksProps.getCanal().getBatchSize(), cksProps.getCanal().getFetchTimeOutMs(), TimeUnit.MILLISECONDS);
+                    watch.stop();
+                    log.info("getWithoutAck spend: " + watch);
                     batchId = message.getId();
-                    if (batchId == -1 || CollectionUtils.isEmpty(message.getEntries())) {
+                    if (batchId == INVALID_BATCH_ID || CollectionUtils.isEmpty(message.getEntries())) {
                         canalConnector.ack(batchId);
+                        log.info("no msg:" + batchId);
                         sleepSec(1);
                     } else {
+                        watch.reset();
+                        watch.start();
                         syncToKudu(message);
+                        watch.stop();
+                        log.info("syncToKudu spend: " + watch);
                         canalConnector.ack(batchId);
                     }
                 } catch (Exception e) {
-                    if (batchId != null) {
+                    log.error("doConsume loop error", e);
+                    if (batchId != INVALID_BATCH_ID) {
                         canalConnector.rollback(batchId);
                     }
-                    log.error("doConsume loop error", e);
+                    if (syncError != null) {
+                        syncError.getBatchIds().forEach(bId -> canalConnector.rollback(bId));
+                    }
+                    sleepSec(1);
                     FatalException.throwIfFatal(e);
                 }
             }
@@ -122,15 +152,17 @@ public class CanalTcpConsumer {
 
             final CanalEntry.EventType eventType = rowChange.getEventType();
 
+            final long batchId = message.getId();
+
             switch (eventType) {
                 case INSERT:
-                    kuduSyncer.doOperation(entry, rowChange, OperationType.INSERT);
+                    kuduSyncer.doOperation(entry, rowChange, OperationType.INSERT, batchId);
                     break;
                 case UPDATE:
-                    kuduSyncer.doOperation(entry, rowChange, OperationType.UPDATE);
+                    kuduSyncer.doOperation(entry, rowChange, OperationType.UPDATE, batchId);
                     break;
                 case DELETE:
-                    kuduSyncer.doOperation(entry, rowChange, OperationType.DELETE);
+                    kuduSyncer.doOperation(entry, rowChange, OperationType.DELETE, batchId);
                     break;
             }
         }

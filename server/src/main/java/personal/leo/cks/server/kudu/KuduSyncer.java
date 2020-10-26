@@ -1,9 +1,15 @@
 package personal.leo.cks.server.kudu;
 
 import com.alibaba.otter.canal.protocol.CanalEntry;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.time.DateFormatUtils;
 import org.apache.commons.lang3.time.DateUtils;
+import org.apache.commons.lang3.time.StopWatch;
+import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Type;
 import org.apache.kudu.client.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,10 +25,10 @@ import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
 import java.text.ParseException;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 /**
  * TODO 目前是单线程的,后续考虑多线程
@@ -43,9 +49,10 @@ public class KuduSyncer {
      * @see AsyncKuduSession#apply(org.apache.kudu.client.Operation)
      * @see org.apache.kudu.client.AsyncKuduSession#mutationBufferMaxOps
      */
-    private final int maxBatchSize = 1000;
-    private final int syncDurationMs = 1000;
+    private final int maxBatchSize = 10000;
+    private final int syncDurationMs = 10000;
     private final List<Operation> operations = new ArrayList<>(maxBatchSize);
+    private final Set<Long> batchIds = new HashSet<>();
     private final ConcurrentHashMap<String, KuduTable> kuduTableNameMapKuduTable = new ConcurrentHashMap<>();
     private final String[] datePatterns = {
             DateFormatUtils.ISO_8601_EXTENDED_DATETIME_FORMAT.getPattern(),
@@ -53,6 +60,8 @@ public class KuduSyncer {
             DateFormatUtils.ISO_8601_EXTENDED_DATE_FORMAT.getPattern(),
             "yyyy-MM-dd HH:mm:ss"
     };
+
+    private AtomicReference<SyncError> syncError = new AtomicReference<>();
 
     @PostConstruct
     private void postConstruct() {
@@ -68,12 +77,13 @@ public class KuduSyncer {
                 sync();
             } catch (Exception e) {
                 log.error("schedule kudu syncer error", e);
+                syncError.set(new SyncError(batchIds, e));
             }
         }, Duration.ofMillis(syncDurationMs));
     }
 
 
-    public synchronized void doOperation(CanalEntry.Entry entry, CanalEntry.RowChange rowChange, OperationType operationType) throws KuduException, ParseException {
+    public synchronized void doOperation(CanalEntry.Entry entry, CanalEntry.RowChange rowChange, OperationType operationType, long batchId) throws KuduException, ParseException {
         final String srcTableId = IdUtils.buildSrcTableId(entry);
         final String kuduTableName = cksService.getKuduTableName(srcTableId);
         if (kuduTableName == null) {
@@ -83,12 +93,17 @@ public class KuduSyncer {
             final Operation operation = createOperation(rowChange, kuduTableName, kuduTable, operationType);
 
             operations.add(operation);
+            batchIds.add(batchId);
 
             //大于等于maxBatchSize的话,kudu apply的时候会报错
             if (operations.size() == maxBatchSize - 1) {
                 sync();
             }
         }
+    }
+
+    public SyncError getSyncError() {
+        return syncError.get();
     }
 
     private Operation createOperation(CanalEntry.RowChange rowChange, String kuduTableName, KuduTable kuduTable, OperationType operationType) throws ParseException {
@@ -113,23 +128,28 @@ public class KuduSyncer {
     private void fillOperation(CanalEntry.RowChange rowChange, String kuduTableName, OperationType operationType, Operation operation) throws ParseException {
         final PartialRow row = operation.getRow();
         for (CanalEntry.RowData rowData : rowChange.getRowDatasList()) {
-            final List<CanalEntry.Column> srcColumns;
+            final List<CanalEntry.Column> srcModifiedColumns;
+//            TODO 找到变更的列
+            final List<CanalEntry.Column> beforeColumnsList = rowData.getBeforeColumnsList();
+            final List<CanalEntry.Column> afterColumnsList = rowData.getAfterColumnsList();
             switch (operationType) {
                 case INSERT:
+                    srcModifiedColumns = afterColumnsList;
+                    break;
                 case UPDATE:
-                    srcColumns = rowData.getAfterColumnsList();
+                    srcModifiedColumns = findValueChangedColumns(beforeColumnsList, afterColumnsList, kuduTableName);
                     break;
                 case DELETE:
-                    srcColumns = rowData.getBeforeColumnsList();
+                    srcModifiedColumns = beforeColumnsList;
                     break;
                 default:
                     throw new FatalException("not supported:" + operationType);
             }
 
-            for (CanalEntry.Column srcColumn : srcColumns) {
-                final String kuduColumnName = srcColumn.getName();
+            for (CanalEntry.Column srcModifiedColumn : srcModifiedColumns) {
+                final String kuduColumnName = srcModifiedColumn.getName();
                 final String kuduColumnId = IdUtils.buildKuduColumnId(kuduTableName, kuduColumnName);
-                final String srcColumnValue = srcColumn.getValue();
+                final String srcColumnValue = srcModifiedColumn.getValue();
                 final Type kuduColumnType = cksService.getKuduColumnType(kuduColumnId);
                 if (kuduColumnType == null) {
                     //TODO 这种情况先忽略?
@@ -138,6 +158,66 @@ public class KuduSyncer {
                 }
             }
         }
+    }
+
+    /**
+     * TODO 如果kudu库中没有该条数据,会导致插入有误,因为会比较源库中的before和after,只会找到变更的值
+     *
+     * @param beforeColumnsList
+     * @param afterColumnsList
+     * @param kuduTableName
+     * @return
+     */
+    private List<CanalEntry.Column> findValueChangedColumns(List<CanalEntry.Column> beforeColumnsList, List<CanalEntry.Column> afterColumnsList, String kuduTableName) {
+        return afterColumnsList.stream()
+                .map(afterColumn -> {
+                    final String kuduColumnId = IdUtils.buildKuduColumnId(kuduTableName, afterColumn.getName());
+                    final ColumnSchema kuduColumn = cksService.getKuduColumn(kuduColumnId);
+                    if (kuduColumn == null) {
+                        //TODO 咋整?先直接返回
+                        return afterColumn;
+                    } else {
+                        if (kuduColumn.isKey()) {
+                            return afterColumn;
+                        } else if (!kuduColumn.isNullable()) {
+                            return afterColumn;
+                        } else {
+//                            do nothing
+                        }
+                    }
+
+                    final CanalEntry.Column beforeColumn = findColumn(beforeColumnsList, afterColumn);
+                    if (beforeColumn == null) {
+                        return afterColumn;
+                    } else {
+                        if (StringUtils.equals(beforeColumn.getValue(), afterColumn.getValue())) {
+                            return null;
+                        } else {
+                            return afterColumn;
+                        }
+                    }
+                })
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 转map可能有报错风险,量不大的时候,用for循环获取反而高效安全
+     *
+     * @param columns
+     * @param targetColumn
+     * @return
+     */
+    private CanalEntry.Column findColumn(List<CanalEntry.Column> columns, CanalEntry.Column targetColumn) {
+        if (CollectionUtils.isEmpty(columns) || targetColumn == null) {
+            return null;
+        }
+        for (CanalEntry.Column column : columns) {
+            if (StringUtils.equals(column.getName(), targetColumn.getName())) {
+                return column;
+            }
+        }
+        return null;
     }
 
     /**
@@ -150,6 +230,14 @@ public class KuduSyncer {
      * @throws ParseException
      */
     private void fillRow(PartialRow row, String kuduColumnName, String srcColumnValue, Type kuduColumnType) throws ParseException {
+        if (StringUtils.isEmpty(srcColumnValue)) {
+            if (kuduColumnType == Type.STRING) {
+                row.addString(kuduColumnName, srcColumnValue);
+            } else {
+                row.addObject(kuduColumnName, null);
+            }
+            return;
+        }
         switch (kuduColumnType) {
             case BOOL:
                 row.addBoolean(kuduColumnName, Boolean.parseBoolean(srcColumnValue));
@@ -204,21 +292,33 @@ public class KuduSyncer {
         if (operations.isEmpty()) {
             return;
         }
-
+        final StopWatch watch = StopWatch.createStarted();
         for (Operation operation : operations) {
             session.apply(operation);
         }
-
+        log.info("sync apply: " + operations.size());
         final List<OperationResponse> resps = session.flush();
         if (resps.size() > 0) {
             OperationResponse resp = resps.get(0);
             if (resp.hasRowError()) {
+                //TODO 应该丢出怎样的异常?fatal?
                 throw new RuntimeException("sync to kudu error:" + resp.getRowError());
             }
         }
+        watch.stop();
+        log.info("sync success: " + operations.size() + ", spend: " + watch);
 
         operations.clear();
+        batchIds.clear();
+
+        syncError.set(null);
     }
 
+    @AllArgsConstructor
+    @Getter
+    public static class SyncError {
+        private Set<Long> batchIds;
+        private Exception exception;
+    }
 
 }

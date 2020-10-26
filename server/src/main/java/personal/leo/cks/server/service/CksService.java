@@ -15,6 +15,7 @@ import personal.leo.cks.server.mapper.po.TableMappingInfo;
 import personal.leo.cks.server.util.IdUtils;
 
 import javax.annotation.PostConstruct;
+import java.util.Collections;
 import java.util.Map;
 
 /**
@@ -33,8 +34,8 @@ public class CksService {
     @Autowired
     private TableMappingInfoMapper tableMappingInfoMapper;
 
-    private Map<String, Type> kuduColumnIdMapKuduColumnType;
-    private Map<String, String> srcTableIdMapKuduTableName;
+    private Map<String, ColumnSchema> kuduColumnIdMapKuduColumn = Collections.synchronizedMap(new HashedMap<>());
+    private Map<String, String> srcTableIdMapKuduTableName = Collections.synchronizedMap(new HashedMap<>());
 
 
     @PostConstruct
@@ -49,18 +50,26 @@ public class CksService {
     }
 
     public Type getKuduColumnType(String kuduColumnId) {
-        return kuduColumnIdMapKuduColumnType.get(kuduColumnId);
+        final ColumnSchema columnSchema = kuduColumnIdMapKuduColumn.get(kuduColumnId);
+        if (columnSchema == null) {
+            return null;
+        }
+        return columnSchema.getType();
     }
 
+    public ColumnSchema getKuduColumn(String kuduColumnId) {
+        return kuduColumnIdMapKuduColumn.get(kuduColumnId);
+    }
 
     private void reloadKuduColumnIdMapKuduColumnType() throws KuduException {
         final StopWatch watch = StopWatch.createStarted();
-        kuduColumnIdMapKuduColumnType = new HashedMap<>();
+        kuduColumnIdMapKuduColumn.clear();
+
         for (String tableName : kuduClient.getTablesList().getTablesList()) {
-            final KuduTable table = kuduClient.openTable(tableName);
-            for (ColumnSchema column : table.getSchema().getColumns()) {
-                final String kuduColumnId = IdUtils.buildKuduColumnId(table, column);
-                kuduColumnIdMapKuduColumnType.put(kuduColumnId, column.getType());
+            final KuduTable kuduTable = kuduClient.openTable(tableName);
+            for (ColumnSchema kuduColumn : kuduTable.getSchema().getColumns()) {
+                final String kuduColumnId = IdUtils.buildKuduColumnId(kuduTable, kuduColumn);
+                kuduColumnIdMapKuduColumn.put(kuduColumnId, kuduColumn);
             }
         }
         watch.stop();
@@ -70,7 +79,7 @@ public class CksService {
 
     private void reloadSrcTableIdMapKuduTableName() {
         final StopWatch watch = StopWatch.createStarted();
-        srcTableIdMapKuduTableName = new HashedMap<>();
+        srcTableIdMapKuduTableName.clear();
 
         for (TableMappingInfo tableMappingInfo : tableMappingInfoMapper.selectAll()) {
             final String srcTableId = IdUtils.buildSrcTableId(tableMappingInfo.getSrc_schema_name(), tableMappingInfo.getSrc_table_name());

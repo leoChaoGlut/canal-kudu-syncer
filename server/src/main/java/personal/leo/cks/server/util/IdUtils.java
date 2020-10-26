@@ -18,15 +18,15 @@ public class IdUtils {
         return entry.getHeader().getSchemaName() + DOT + entry.getHeader().getTableName();
     }
 
-    public static String buildSrcTableId(String schemaName, String tableName) {
-        return schemaName + DOT + tableName;
+    public static String buildSrcTableId(String srcSchemaName, String srcTableName) {
+        return srcSchemaName + DOT + srcTableName;
     }
 
     public static String buildKuduColumnId(String kuduTableName, String kuduColumnName) {
         return kuduTableName + DOT + kuduColumnName;
     }
 
-    public static String buildKuduColumnId(KuduTable kuduTable, ColumnSchema column) {
-        return buildKuduColumnId(kuduTable.getName(), column.getName());
+    public static String buildKuduColumnId(KuduTable kuduTable, ColumnSchema kuduColumn) {
+        return buildKuduColumnId(kuduTable.getName(), kuduColumn.getName());
     }
 }
