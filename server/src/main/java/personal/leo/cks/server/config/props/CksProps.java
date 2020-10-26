@@ -2,7 +2,6 @@ package personal.leo.cks.server.config.props;
 
 import lombok.Getter;
 import lombok.Setter;
-import personal.leo.cks.server.constants.PropKey;
 
 @Getter
 @Setter
@@ -21,7 +20,6 @@ public class CksProps {
          * split by ,
          */
         private String servers;
-        private String rootPath = "/" + PropKey.CKS;
     }
 
     @Getter

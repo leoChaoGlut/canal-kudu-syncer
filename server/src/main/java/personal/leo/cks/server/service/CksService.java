@@ -1,7 +1,10 @@
 package personal.leo.cks.server.service;
 
+import com.alibaba.otter.canal.client.CanalConnector;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.map.HashedMap;
+import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.time.StopWatch;
 import org.apache.kudu.ColumnSchema;
 import org.apache.kudu.Type;
@@ -10,13 +13,15 @@ import org.apache.kudu.client.KuduException;
 import org.apache.kudu.client.KuduTable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import personal.leo.cks.server.mapper.TableMappingInfoMapper;
-import personal.leo.cks.server.mapper.po.TableMappingInfo;
+import personal.leo.cks.server.constants.ZkPath;
 import personal.leo.cks.server.util.IdUtils;
 
 import javax.annotation.PostConstruct;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * TODO 需要支持reload
@@ -32,16 +37,22 @@ public class CksService {
     @Autowired
     private KuduClient kuduClient;
     @Autowired
-    private TableMappingInfoMapper tableMappingInfoMapper;
+    private CanalConnector canalConnector;
+    @Autowired
+    private CuratorService curatorService;
 
     private Map<String, ColumnSchema> kuduColumnIdMapKuduColumn = Collections.synchronizedMap(new HashedMap<>());
     private Map<String, String> srcTableIdMapKuduTableName = Collections.synchronizedMap(new HashedMap<>());
 
 
     @PostConstruct
-    private void postConstruct() throws KuduException {
-        reloadKuduColumnIdMapKuduColumnType();
-        reloadSrcTableIdMapKuduTableName();
+    private void postConstruct() throws Exception {
+        curatorService.addTreeCacheListener(ZkPath.tableMappingInfo, (client, event) -> {
+            if (event.getData() != null) {
+                reloadKuduColumnIdMapKuduColumnType();
+                reloadSrcTableIdMapKuduTableName(event.getData().getData());
+            }
+        });
     }
 
 
@@ -77,13 +88,48 @@ public class CksService {
     }
 
 
-    private void reloadSrcTableIdMapKuduTableName() {
+    private void reloadSrcTableIdMapKuduTableName(byte[] bytes) throws Exception {
         final StopWatch watch = StopWatch.createStarted();
         srcTableIdMapKuduTableName.clear();
 
-        for (TableMappingInfo tableMappingInfo : tableMappingInfoMapper.selectAll()) {
-            final String srcTableId = IdUtils.buildSrcTableId(tableMappingInfo.getSrc_schema_name(), tableMappingInfo.getSrc_table_name());
-            srcTableIdMapKuduTableName.put(srcTableId, tableMappingInfo.getKudu_table_name());
+        final String csv = new String(bytes, StandardCharsets.UTF_8);
+
+        if (StringUtils.isBlank(csv)) {
+            return;
+        }
+
+        final String[] rows = StringUtils.splitByWholeSeparator(csv, "\n");
+        if (ArrayUtils.isEmpty(rows)) {
+            return;
+        }
+
+        final String subscribeFilter = Arrays.stream(rows)
+                .map(row -> {
+                    final String[] columns = StringUtils.splitByWholeSeparator(row, ",");
+                    if (ArrayUtils.isEmpty(columns) || columns.length != 3) {
+                        return null;
+                    }
+                    return columns;
+                })
+                .filter(Objects::nonNull)
+                .map(columns -> {
+                    final String srcSchemaName = columns[0];
+                    final String srcTableName = columns[1];
+                    final String kuduTableName = columns[2];
+                    final String srcTableId = IdUtils.buildSrcTableId(srcSchemaName, srcTableName);
+                    srcTableIdMapKuduTableName.put(srcTableId, kuduTableName);
+                    return srcTableId;
+                })
+                .reduce((srcTableId1, srcTableId2) -> srcTableId1 + "," + srcTableId2)
+                .orElse(null);
+
+        if (StringUtils.isNotBlank(subscribeFilter)) {
+            log.info("subscribe filter changed: " + subscribeFilter);
+            if (canalConnector.checkValid()) {
+                log.info("change subscribe filter before: " + subscribeFilter);
+                canalConnector.subscribe(subscribeFilter);
+                log.info("change subscribe filter after: " + subscribeFilter);
+            }
         }
 
         watch.stop();

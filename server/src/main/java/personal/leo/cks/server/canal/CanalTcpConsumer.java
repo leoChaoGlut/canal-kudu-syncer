@@ -6,8 +6,6 @@ import com.alibaba.otter.canal.protocol.Message;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.CollectionUtils;
 import org.apache.curator.framework.CuratorFramework;
-import org.apache.curator.framework.recipes.cache.ChildData;
-import org.apache.curator.framework.recipes.cache.TreeCache;
 import org.apache.kudu.client.KuduException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -15,9 +13,9 @@ import personal.leo.cks.server.config.props.CksProps;
 import personal.leo.cks.server.exception.FatalException;
 import personal.leo.cks.server.kudu.KuduSyncer;
 import personal.leo.cks.server.kudu.OperationType;
+import personal.leo.cks.server.service.CuratorService;
 
 import javax.annotation.PostConstruct;
-import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
 import java.util.concurrent.TimeUnit;
 
@@ -38,30 +36,12 @@ public class CanalTcpConsumer {
     KuduSyncer kuduSyncer;
     @Autowired
     CuratorFramework curator;
+    @Autowired
+    CuratorService curatorService;
 
     @PostConstruct
     private void postConstruct() throws Exception {
-        subscribeFilterChange();
         consume();
-    }
-
-
-    private void subscribeFilterChange() throws Exception {
-        final String path = cksProps.getZk().getRootPath() + "/canal/subscribe";
-        final TreeCache treeCache = TreeCache.newBuilder(curator, path).build();
-        treeCache.getListenable().addListener((curatorFramework, treeCacheEvent) -> {
-            final ChildData childData = treeCacheEvent.getData();
-            if (childData != null) {
-                final String filter = new String(childData.getData(), StandardCharsets.UTF_8);
-                log.info("subscribe filter changed: " + filter);
-                if (canalConnector.checkValid()) {
-                    log.info("change subscribe filter before: " + filter);
-                    canalConnector.subscribe(filter);
-                    log.info("change subscribe filter after: " + filter);
-                }
-            }
-        });
-        treeCache.start();
     }
 
     /**
@@ -81,9 +61,6 @@ public class CanalTcpConsumer {
         }
     }
 
-    /**
-     * TODO bootstrap完成后,动态subscribe
-     */
     private void doConsume() {
         try {
             canalConnector.connect();

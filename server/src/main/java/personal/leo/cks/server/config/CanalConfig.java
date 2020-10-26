@@ -21,12 +21,6 @@ public class CanalConfig {
         return CanalConnectors.newClusterConnector(zkServers, canalProps.getDestination(), canalProps.getUsername(), canalProps.getPassword());
     }
 
-    /**
-     * TODO apache curator 更合适,但是5.1版本与zk3.4.6版本测试时,监听无效
-     *
-     * @param cksProps
-     * @return
-     */
     @Bean
     public CuratorFramework curator(CksProps cksProps) {
         RetryPolicy retryPolicy = new ExponentialBackoffRetry(1000, 3);

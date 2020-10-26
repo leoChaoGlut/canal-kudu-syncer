@@ -1,7 +1,13 @@
 package personal.leo.cks.server;
 
+import org.apache.curator.RetryPolicy;
+import org.apache.curator.framework.CuratorFramework;
+import org.apache.curator.framework.CuratorFrameworkFactory;
+import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.junit.Test;
+import personal.leo.cks.server.constants.ZkPath;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
@@ -50,7 +56,14 @@ public class CommonTest {
     }
 
     @Test
-    public void test3() throws ExecutionException, InterruptedException {
+    public void test3() throws Exception {
+        RetryPolicy retryPolicy = new ExponentialBackoffRetry(1000, 3);
+        final CuratorFramework curator = CuratorFrameworkFactory.newClient("test01:2181", retryPolicy);
+        curator.start();
+
+//        curator.create().forPath(ZkPath.tableMappingInfo);
+        String str = "azkaban,execution_jobs,presto::azkaban.execution_jobs\n";
+        curator.setData().forPath(ZkPath.tableMappingInfo, str.getBytes(StandardCharsets.UTF_8));
     }
 
     public static class TT {
