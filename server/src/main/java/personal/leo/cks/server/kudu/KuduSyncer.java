@@ -89,7 +89,7 @@ public class KuduSyncer {
         final String srcTableId = IdUtils.buildSrcTableId(entry);
         final String kuduTableName = cksService.getKuduTableName(srcTableId);
         if (kuduTableName == null) {
-            //TODO 跳过?
+            log.info("kuduTableName is null,skip:" + srcTableId);
         } else {
             final KuduTable kuduTable = openKuduTable(kuduTableName);
             final Operation operation = createOperation(rowChange, kuduTableName, kuduTable, operationType);
@@ -138,7 +138,11 @@ public class KuduSyncer {
                     srcModifiedColumns = afterColumns;
                     break;
                 case UPDATE:
-                    srcModifiedColumns = findValueChangedColumns(beforeColumns, afterColumns, kuduTableName);
+                    if (kuduProps.isOnlySyncValueChangedColumns()) {
+                        srcModifiedColumns = findValueChangedColumns(beforeColumns, afterColumns, kuduTableName);
+                    } else {
+                        srcModifiedColumns = afterColumns;
+                    }
                     break;
                 case DELETE:
                     srcModifiedColumns = beforeColumns;
@@ -161,14 +165,7 @@ public class KuduSyncer {
         }
     }
 
-    /**
-     * TODO 如果kudu库中没有该条数据,会导致插入有误,因为会比较源库中的before和after,只会找到变更的值
-     *
-     * @param beforeColumns
-     * @param afterColumns
-     * @param kuduTableName
-     * @return
-     */
+
     private List<CanalEntry.Column> findValueChangedColumns(List<CanalEntry.Column> beforeColumns, List<CanalEntry.Column> afterColumns, String kuduTableName) {
         return afterColumns.stream()
                 .map(afterColumn -> {
