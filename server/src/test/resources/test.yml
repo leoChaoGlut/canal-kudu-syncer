@@ -6,5 +6,35 @@ cks:
     - s3
 
 
-1.canal running:
-  1.1.
+  1.zk 中创建instance
+  2.cks server 抢占instance
+  3.
+
+
+  /cks/task/list/t1
+  /cks/task/list/t2
+  /cks/task/running/t1
+  /cks/task/running/t2
+
+
+tasklist:
+  add:
+    reload props
+    tryClaimTask
+    break;
+  update:
+    reload props
+    restartTask
+    break;
+  remove:
+    if is taskowner:
+      stop task
+    break;
+
+taskRunning:
+  check taskList,if found not running task,tryClaimTask
+  add:
+    if is my task, start it
+  update:
+
+  remove:

@@ -15,7 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class CuratorService {
     @Autowired
-    CuratorFramework curator;
+    private CuratorFramework curator;
 
     private ConcurrentHashMap<String, TreeCache> zkPathMapTreeCache = new ConcurrentHashMap<>();
 
